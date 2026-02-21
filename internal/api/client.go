@@ -9,8 +9,8 @@ import (
 )
 
 func SearchStations(query string) ([]model.Station, error) {
-	// Use the load-balanced DNS
-	baseUrl := "https://at1.api.radio-browser.info/json/stations/"
+	// Use the main round-robin address which is more reliable
+	baseUrl := "https://all.api.radio-browser.info/json/stations/"
 	var apiURL string
 	
 	if query == "" {
@@ -21,7 +21,17 @@ func SearchStations(query string) ([]model.Station, error) {
 
 	resp, err := http.Get(apiURL)
 	if err != nil {
-		return nil, err
+		// Fallback to a specific stable mirror if round-robin fails
+		baseUrl = "https://de1.api.radio-browser.info/json/stations/"
+		if query == "" {
+			apiURL = baseUrl + "topclick/50"
+		} else {
+			apiURL = baseUrl + "byname/" + url.PathEscape(query)
+		}
+		resp, err = http.Get(apiURL)
+		if err != nil {
+			return nil, err
+		}
 	}
 	defer resp.Body.Close()
 
