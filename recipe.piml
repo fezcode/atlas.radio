@@ -1,4 +1,4 @@
 (name) atlas.radio
-(version) 0.1.0
-(description) Global terminal radio streamer with Pip-Boy aesthetic.
+(version) 0.2.0
+(description) Global terminal radio receiver with Pip-Boy TUI.
 (license) MIT
