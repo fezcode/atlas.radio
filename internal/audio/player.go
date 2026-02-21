@@ -1,18 +1,19 @@
 package audio
 
 import (
-	"context"
+	"io"
 	"net/http"
 	"sync"
+	"time"
 
-	"github.com/ebitengine/oto/v3"
-	"github.com/hajimehoshi/go-mp3"
+	"github.com/gopxl/beep/v2"
+	"github.com/gopxl/beep/v2/mp3"
+	"github.com/gopxl/beep/v2/speaker"
 )
 
 type Player struct {
-	otoCtx *oto.Context
-	cancel context.CancelFunc
-	mu     sync.Mutex
+	mu      sync.Mutex
+	closer  io.Closer
 }
 
 func NewPlayer() *Player {
@@ -20,57 +21,34 @@ func NewPlayer() *Player {
 }
 
 func (p *Player) Play(streamURL string) error {
+	p.Stop()
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Stop previous
-	if p.cancel != nil {
-		p.cancel()
-	}
-
-	// 1. Fetch Stream
 	resp, err := http.Get(streamURL)
 	if err != nil {
 		return err
 	}
+	p.closer = resp.Body
 
-	// 2. Decode MP3
-	decoder, err := mp3.NewDecoder(resp.Body)
+	// Decode the stream
+	streamer, format, err := mp3.Decode(resp.Body)
 	if err != nil {
 		resp.Body.Close()
 		return err
 	}
 
-	// 3. Init Oto if not initialized
-	if p.otoCtx == nil {
-		op := &oto.NewContextOptions{
-			SampleRate:   decoder.SampleRate(),
-			ChannelCount: 2,
-			Format:       oto.FormatSignedInt16LE,
-		}
-		ctx, ready, err := oto.NewContext(op)
-		if err != nil {
-			resp.Body.Close()
-			return err
-		}
-		<-ready
-		p.otoCtx = ctx
+	// speaker.Init is safe to call multiple times in beep/v2
+	err = speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+	if err != nil {
+		streamer.Close()
+		resp.Body.Close()
+		return err
 	}
 
-	// 4. Create Player
-	player := p.otoCtx.NewPlayer(decoder)
-	player.Play()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	p.cancel = cancel
-
-	// 5. Monitor and Cleanup
-	go func() {
-		defer resp.Body.Close()
-		defer player.Close()
-
-		<-ctx.Done() // Block until stopped
-	}()
+	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
+		p.Stop()
+	})))
 
 	return nil
 }
@@ -78,8 +56,10 @@ func (p *Player) Play(streamURL string) error {
 func (p *Player) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.cancel != nil {
-		p.cancel()
-		p.cancel = nil
+	
+	speaker.Clear()
+	if p.closer != nil {
+		p.closer.Close()
+		p.closer = nil
 	}
 }
