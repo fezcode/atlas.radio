@@ -51,6 +51,7 @@ type Model struct {
 	width, height int
 	current      model.Station
 	isPlaying    bool
+	isLoading    bool
 	eqValues     []int
 	err          error
 	scrollOffset int
@@ -68,6 +69,7 @@ func NewModel() Model {
 		player:   audio.NewPlayer(),
 		eqValues: make([]int, 20),
 		state:    stateBrowsing,
+		isLoading: true,
 	}
 }
 
@@ -112,6 +114,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "enter":
 				m.state = stateBrowsing
+				m.isLoading = true
 				return m, m.searchCmd(m.input.Value())
 			case "esc":
 				m.state = stateBrowsing
@@ -143,7 +146,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.stations) > 0 {
 				m.current = m.stations[m.cursor]
 				m.isPlaying = true
-				m.player.Play(m.current.URL)
+				m.err = m.player.Play(m.current.URL)
 			}
 		}
 
@@ -151,9 +154,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stations = msg
 		m.cursor = 0
 		m.scrollOffset = 0
+		m.isLoading = false
+		m.err = nil
 
 	case error:
 		m.err = msg
+		m.isLoading = false
 
 	case tickMsg:
 		if m.isPlaying {
@@ -168,8 +174,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) renderList() string {
-	if len(m.stations) == 0 {
+	if m.isLoading {
 		return dimStyle.Render("SCANNING FREQUENCIES...")
+	}
+	if len(m.stations) == 0 {
+		return restlessStyle().Render("NO SIGNAL FOUND.")
 	}
 
 	var sb strings.Builder
@@ -205,7 +214,7 @@ func (m Model) View() string {
 		
 		playerSide := "\n" + headerStyle.Render(" SIGNAL DATA ") + "\n"
 		if m.err != nil {
-			playerSide += restlessStyle().Render("ERROR: OFFLINE") + "\n"
+			playerSide += restlessStyle().Render("ERROR: " + m.err.Error()) + "\n"
 		} else if m.isPlaying {
 			playerSide += textStyle.Render("STATION: " + m.current.Name) + "\n"
 			playerSide += dimStyle.Render("SIGNAL: " + m.current.Country) + "\n\n"
@@ -226,8 +235,8 @@ func (m Model) View() string {
 		playerSide += "\n\n" + dimStyle.Render("J/K: NAVIGATE\nENTER: TUNE IN\nS: SEARCH\nP: POWER OFF\nQ: QUIT")
 
 		mainContent = lipgloss.JoinHorizontal(lipgloss.Top, 
-			lipgloss.NewStyle().Width(m.width/2-4).Background(onyx).Render(listSide),
-			lipgloss.NewStyle().Width(m.width/2-4).PaddingLeft(4).Background(onyx).Render(playerSide),
+			lipgloss.NewStyle().Width(m.width/2-4).Render(listSide),
+			lipgloss.NewStyle().Width(m.width/2-4).PaddingLeft(4).Render(playerSide),
 		)
 	}
 

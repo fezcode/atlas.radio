@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"time"
 )
 
 type Player struct {
@@ -19,15 +20,26 @@ func NewPlayer() *Player {
 func (p *Player) Play(streamURL string) error {
 	p.Stop()
 
+	// Check if ffplay exists
+	_, err := exec.LookPath("ffplay")
+	if err != nil {
+		return fmt.Errorf("ffplay not found in PATH. Please install FFmpeg.")
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
 
-	// Use mpv: simple, robust, handles almost any stream
-	// --no-video: audio only
-	// --msg-level=all=no: silent output
-	p.cmd = exec.CommandContext(ctx, "mpv", "--no-video", "--msg-level=all=no", streamURL)
+	// -nodisp: no video window
+	// -autoexit: exit when stream ends
+	p.cmd = exec.CommandContext(ctx, "ffplay", "-nodisp", "-autoexit", streamURL)
 	
-	return p.cmd.Start()
+	err = p.cmd.Start()
+	if err != nil {
+		cancel()
+		return err
+	}
+
+	return nil
 }
 
 func (p *Player) Stop() {
