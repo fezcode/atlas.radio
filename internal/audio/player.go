@@ -2,9 +2,9 @@ package audio
 
 import (
 	"context"
-	"fmt"
 	"os/exec"
 	"runtime"
+	"time"
 )
 
 type Player struct {
@@ -17,40 +17,37 @@ func NewPlayer() *Player {
 }
 
 func (p *Player) Play(streamURL string) error {
-	// Sync Stop before playing new
+	// 1. Force kill everything first
 	p.Stop()
+	
+	// 2. Short pause to ensure OS releases the audio device
+	time.Sleep(200 * time.Millisecond)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
 
+	// 3. Start new process
 	p.cmd = exec.CommandContext(ctx, "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", streamURL)
 	
-	err := p.cmd.Start()
-	if err != nil {
-		cancel()
-		return err
-	}
-	
-	// Start a goroutine to wait for the process to end naturally
-	go func() {
-		_ = p.cmd.Wait()
-	}()
-
-	return nil
+	return p.cmd.Start()
 }
 
 func (p *Player) Stop() {
+	// Signal our specific context if it exists
 	if p.cancel != nil {
-		p.cancel() // Signal context cancellation
+		p.cancel()
 	}
+
+	// NUCLEAR OPTION: Kill all ffplay processes by name.
+	// This is the only way to be 100% sure on Windows when dealing with media orphans.
+	if runtime.GOOS == "windows" {
+		_ = exec.Command("taskkill", "/F", "/IM", "ffplay.exe", "/T").Run()
+	} else {
+		_ = exec.Command("pkill", "-9", "ffplay").Run()
+	}
+
+	// Cleanup our command handle
 	if p.cmd != nil && p.cmd.Process != nil {
-		if runtime.GOOS == "windows" {
-			// Synchronously kill the process tree
-			_ = exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", p.cmd.Process.Pid)).Run()
-		} else {
-			_ = p.cmd.Process.Kill()
-		}
-		// Wait for it to be fully gone before returning
 		_ = p.cmd.Wait()
 		p.cmd = nil
 	}
