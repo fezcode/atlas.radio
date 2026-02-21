@@ -59,7 +59,7 @@ type Model struct {
 
 func NewModel() Model {
 	ti := textinput.New()
-	ti.Placeholder = "TYPE TO SEARCH..."
+	ti.Placeholder = "ENTER SIGNAL QUERY..."
 	ti.Prompt = " > "
 	ti.TextStyle = textStyle
 	
@@ -140,7 +140,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < m.scrollOffset { m.scrollOffset-- }
 		case "down", "j":
 			if m.cursor < len(m.stations)-1 { m.cursor++ }
-			maxVisible := m.height - 10
+			maxVisible := m.height - 12
 			if m.cursor >= m.scrollOffset+maxVisible { m.scrollOffset++ }
 		case "enter":
 			if len(m.stations) > 0 {
@@ -182,7 +182,7 @@ func (m Model) renderList() string {
 	}
 
 	var sb strings.Builder
-	maxVisible := m.height - 10
+	maxVisible := m.height - 12
 	if maxVisible < 1 { maxVisible = 1 }
 	
 	end := m.scrollOffset + maxVisible
@@ -200,6 +200,12 @@ func (m Model) renderList() string {
 			sb.WriteString(textStyle.Render("  "+line) + "\n")
 		}
 	}
+	
+	// Add scrolling indicator
+	if len(m.stations) > maxVisible {
+		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n  SIGNAL %d/%d", m.cursor+1, len(m.stations))))
+	}
+
 	return sb.String()
 }
 
