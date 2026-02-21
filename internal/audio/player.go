@@ -1,17 +1,15 @@
 package audio
 
 import (
-	"io"
-	"net/http"
-	"time"
-
-	"github.com/gopxl/beep"
-	"github.com/gopxl/beep/mp3"
-	"github.com/gopxl/beep/speaker"
+	"context"
+	"fmt"
+	"os/exec"
+	"runtime"
 )
 
 type Player struct {
-	closer io.Closer
+	cancel context.CancelFunc
+	cmd    *exec.Cmd
 }
 
 func NewPlayer() *Player {
@@ -21,34 +19,28 @@ func NewPlayer() *Player {
 func (p *Player) Play(streamURL string) error {
 	p.Stop()
 
-	resp, err := http.Get(streamURL)
-	if err != nil {
-		return err
-	}
-	p.closer = resp.Body
+	ctx, cancel := context.WithCancel(context.Background())
+	p.cancel = cancel
 
-	streamer, format, err := mp3.Decode(resp.Body)
-	if err != nil {
-		p.Stop()
-		return err
-	}
-
-	// Initialize speaker only once or if format changes
-	// For simplicity in this novice version, we init with every new stream
-	// speaker.Init is safe to call multiple times if we close previous
-	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-
-	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
-		p.Stop()
-	})))
-
-	return nil
+	// Use mpv: simple, robust, handles almost any stream
+	// --no-video: audio only
+	// --msg-level=all=no: silent output
+	p.cmd = exec.CommandContext(ctx, "mpv", "--no-video", "--msg-level=all=no", streamURL)
+	
+	return p.cmd.Start()
 }
 
 func (p *Player) Stop() {
-	speaker.Clear()
-	if p.closer != nil {
-		p.closer.Close()
-		p.closer = nil
+	if p.cancel != nil {
+		p.cancel()
+	}
+	if p.cmd != nil && p.cmd.Process != nil {
+		if runtime.GOOS == "windows" {
+			_ = exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", p.cmd.Process.Pid)).Run()
+		} else {
+			_ = p.cmd.Process.Kill()
+		}
+		_ = p.cmd.Wait()
+		p.cmd = nil
 	}
 }
