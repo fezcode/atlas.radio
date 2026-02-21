@@ -1,12 +1,13 @@
 package audio
 
 import (
+	"context"
 	"os/exec"
-	"runtime"
 )
 
 type Player struct {
-	cmd *exec.Cmd
+	cancel context.CancelFunc
+	cmd    *exec.Cmd
 }
 
 func NewPlayer() *Player {
@@ -16,23 +17,25 @@ func NewPlayer() *Player {
 func (p *Player) Play(streamURL string) error {
 	p.Stop()
 
-	// Use ffplay (part of ffmpeg) which is common, or mpv
-	// -nodisp: don't show video window
-	// -autoexit: exit when stream ends
-	binary := "ffplay"
-	args := []string{"-nodisp", "-autoexit", streamURL}
+	// Use a context so the process is bound to it
+	ctx, cancel := context.WithCancel(context.Background())
+	p.cancel = cancel
 
-	if runtime.GOOS == "windows" {
-		// Just in case we need to handle windows paths
-	}
-
-	p.cmd = exec.Command(binary, args...)
+	// -nodisp: no video
+	// -autoexit: exit when done
+	// -loglevel quiet: don't spam stderr
+	p.cmd = exec.CommandContext(ctx, "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", streamURL)
+	
 	return p.cmd.Start()
 }
 
 func (p *Player) Stop() {
+	if p.cancel != nil {
+		p.cancel() // Kill the context and the process with it
+	}
 	if p.cmd != nil && p.cmd.Process != nil {
-		p.cmd.Process.Kill()
-		p.cmd.Wait()
+		// Force kill just in case
+		_ = p.cmd.Process.Kill()
+		_ = p.cmd.Wait()
 	}
 }

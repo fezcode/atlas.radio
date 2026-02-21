@@ -16,7 +16,11 @@ func main() {
 		return
 	}
 
-	p := tea.NewProgram(ui.NewModel(), tea.WithAltScreen())
+	m := ui.NewModel()
+	// Ensure the radio stops when the main process exits
+	defer m.Stop()
+
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

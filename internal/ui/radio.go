@@ -62,7 +62,6 @@ type Model struct {
 }
 
 func NewModel() Model {
-	// Create a default delegate and customize it
 	d := list.NewDefaultDelegate()
 	d.Styles.NormalTitle = textStyle
 	d.Styles.SelectedTitle = lipgloss.NewStyle().Foreground(onyx).Background(amber)
@@ -83,6 +82,12 @@ func NewModel() Model {
 		player: audio.NewPlayer(),
 		eqValues: make([]int, 20),
 		state: statePresets,
+	}
+}
+
+func (m Model) Stop() {
+	if m.player != nil {
+		m.player.Stop()
 	}
 }
 
@@ -127,7 +132,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.list.SetSize(m.width/2-4, m.height-10)
+		m.list.SetSize(msg.Width/2-4, msg.Height-10)
 
 	case tea.KeyMsg:
 		if m.state == stateSearching {
