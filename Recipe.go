@@ -3,6 +3,7 @@ package bake_recipe
 
 import (
 	"fmt"
+	"runtime"
 	"github.com/fezcode/gobake"
 )
 
@@ -39,8 +40,20 @@ func Run(bake *gobake.Engine) error {
 				output += ".exe"
 			}
 
+			// Audio backends (oto) require CGO on non-windows platforms.
+			cgo := "0"
+			if t.os != "windows" {
+				cgo = "1"
+			}
+
+			// Skip CGO cross-compilation if host doesn't match
+			if cgo == "1" && (runtime.GOOS != t.os) {
+				ctx.Log("Skipping %s/%s build (CGO required for audio)", t.os, t.arch)
+				continue
+			}
+
 			ctx.Env = []string{
-				"CGO_ENABLED=0",
+				"CGO_ENABLED=" + cgo,
 				"GOOS=" + t.os,
 				"GOARCH=" + t.arch,
 			}
