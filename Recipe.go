@@ -3,7 +3,6 @@ package bake_recipe
 
 import (
 	"fmt"
-	"runtime"
 	"github.com/fezcode/gobake"
 )
 
@@ -40,22 +39,7 @@ func Run(bake *gobake.Engine) error {
 				output += ".exe"
 			}
 
-			// Audio backends (oto) require CGO on non-windows platforms.
-			// Windows can build with CGO_ENABLED=0 using pure Go.
-			cgo := "0"
-			if t.os != "windows" {
-				cgo = "1"
-			}
-
-			// If we are cross-compiling with CGO, it might fail without cross-compilers.
-			// We only attempt if host matches or it's windows.
-			if cgo == "1" && (runtime.GOOS != t.os) {
-				ctx.Log("Skipping %s/%s build (CGO required for audio)", t.os, t.arch)
-				continue
-			}
-
 			ctx.Env = []string{
-				"CGO_ENABLED=" + cgo,
 				"GOOS=" + t.os,
 				"GOARCH=" + t.arch,
 			}
