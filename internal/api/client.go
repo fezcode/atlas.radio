@@ -9,29 +9,20 @@ import (
 )
 
 func SearchStations(query string) ([]model.Station, error) {
-	// Use the main round-robin address which is more reliable
-	baseUrl := "https://all.api.radio-browser.info/json/stations/"
+	// Use a highly stable mirror
+	baseUrl := "https://de1.api.radio-browser.info/json/stations/"
 	var apiURL string
 	
 	if query == "" {
-		apiURL = baseUrl + "topclick/50"
+		// Filter for MP3 and high bitrate to avoid decoding issues
+		apiURL = baseUrl + "topclick/50?codec=MP3"
 	} else {
-		apiURL = baseUrl + "byname/" + url.PathEscape(query)
+		apiURL = baseUrl + "byname/" + url.PathEscape(query) + "?codec=MP3"
 	}
 
 	resp, err := http.Get(apiURL)
 	if err != nil {
-		// Fallback to a specific stable mirror if round-robin fails
-		baseUrl = "https://de1.api.radio-browser.info/json/stations/"
-		if query == "" {
-			apiURL = baseUrl + "topclick/50"
-		} else {
-			apiURL = baseUrl + "byname/" + url.PathEscape(query)
-		}
-		resp, err = http.Get(apiURL)
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 	defer resp.Body.Close()
 

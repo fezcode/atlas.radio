@@ -21,17 +21,20 @@ func (p *Player) Play(streamURL string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Check if mpv exists (it's the most stable for world radio)
-	_, err := exec.LookPath("mpv")
+	// Check for vlc (exceptionally stable for world radio)
+	binary, err := exec.LookPath("vlc")
 	if err != nil {
-		return fmt.Errorf("mpv not found in PATH. Please install mpv.")
+		// Fallback to cvlc if available (headless vlc)
+		binary, err = exec.LookPath("cvlc")
+		if err != nil {
+			return fmt.Errorf("vlc/cvlc not found in PATH. Please install VLC.")
+		}
 	}
 
-	// Use mpv with process group management
-	// --no-video: obviously
-	// --cache=yes: handle jitter
-	// --terminal=no: hide its own output
-	p.cmd = exec.Command("mpv", "--no-video", "--cache=yes", "--terminal=no", streamURL)
+	// Use vlc with no-interface mode
+	// --intf dummy: no gui
+	// --play-and-exit: self-explanatory
+	p.cmd = exec.Command(binary, "--intf", "dummy", streamURL)
 	
 	return p.cmd.Start()
 }
@@ -42,7 +45,6 @@ func (p *Player) Stop() {
 
 	if p.cmd != nil && p.cmd.Process != nil {
 		if runtime.GOOS == "windows" {
-			// On Windows, taskkill /F /T is the most reliable way to kill the tree
 			_ = exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", p.cmd.Process.Pid)).Run()
 		} else {
 			_ = p.cmd.Process.Kill()
