@@ -72,6 +72,11 @@ func NewModel() Model {
 	l.Title = " PIP-BOY 3000 RADIO "
 	l.Styles.Title = headerStyle
 	
+	// Fix transparent background on help and status
+	l.Styles.HelpStyle = dimStyle.Copy().PaddingLeft(2)
+	l.Styles.NoItemsStyle = dimStyle.Copy().PaddingLeft(2)
+	l.SetShowStatusBar(false) // Status bar often has weird backgrounds, hide it for cleaner Pip-Boy look
+	
 	ti := textinput.New()
 	ti.Placeholder = "Enter station name or tag..."
 	ti.TextStyle = textStyle
