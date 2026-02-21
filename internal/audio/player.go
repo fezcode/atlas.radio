@@ -1,15 +1,17 @@
 package audio
 
 import (
-	"context"
-	"os/exec"
-	"runtime"
+	"io"
+	"net/http"
 	"time"
+
+	"github.com/gopxl/beep"
+	"github.com/gopxl/beep/mp3"
+	"github.com/gopxl/beep/speaker"
 )
 
 type Player struct {
-	cancel context.CancelFunc
-	cmd    *exec.Cmd
+	closer io.Closer
 }
 
 func NewPlayer() *Player {
@@ -17,38 +19,36 @@ func NewPlayer() *Player {
 }
 
 func (p *Player) Play(streamURL string) error {
-	// 1. Force kill everything first
 	p.Stop()
-	
-	// 2. Short pause to ensure OS releases the audio device
-	time.Sleep(200 * time.Millisecond)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	p.cancel = cancel
+	resp, err := http.Get(streamURL)
+	if err != nil {
+		return err
+	}
+	p.closer = resp.Body
 
-	// 3. Start new process
-	p.cmd = exec.CommandContext(ctx, "ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", streamURL)
-	
-	return p.cmd.Start()
+	streamer, format, err := mp3.Decode(resp.Body)
+	if err != nil {
+		p.Stop()
+		return err
+	}
+
+	// Initialize speaker only once or if format changes
+	// For simplicity in this novice version, we init with every new stream
+	// speaker.Init is safe to call multiple times if we close previous
+	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+
+	speaker.Play(beep.Seq(streamer, beep.Callback(func() {
+		p.Stop()
+	})))
+
+	return nil
 }
 
 func (p *Player) Stop() {
-	// Signal our specific context if it exists
-	if p.cancel != nil {
-		p.cancel()
-	}
-
-	// NUCLEAR OPTION: Kill all ffplay processes by name.
-	// This is the only way to be 100% sure on Windows when dealing with media orphans.
-	if runtime.GOOS == "windows" {
-		_ = exec.Command("taskkill", "/F", "/IM", "ffplay.exe", "/T").Run()
-	} else {
-		_ = exec.Command("pkill", "-9", "ffplay").Run()
-	}
-
-	// Cleanup our command handle
-	if p.cmd != nil && p.cmd.Process != nil {
-		_ = p.cmd.Wait()
-		p.cmd = nil
+	speaker.Clear()
+	if p.closer != nil {
+		p.closer.Close()
+		p.closer = nil
 	}
 }
