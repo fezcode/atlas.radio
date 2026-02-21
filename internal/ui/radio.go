@@ -9,7 +9,6 @@ import (
 	"atlas.radio/internal/api"
 	"atlas.radio/internal/audio"
 	"atlas.radio/internal/model"
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -37,13 +36,6 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().Foreground(onyx).Background(amber)
 )
 
-type item struct {
-	station model.Station
-}
-func (i item) Title() string       { return i.station.Name }
-func (i item) Description() string { return fmt.Sprintf("%s | %s", i.station.Country, i.station.Tags) }
-func (i item) FilterValue() string { return i.station.Name }
-
 type state int
 const (
 	stateBrowsing state = iota
@@ -51,7 +43,8 @@ const (
 )
 
 type Model struct {
-	list         list.Model
+	stations     []model.Station
+	cursor       int
 	input        textinput.Model
 	player       *audio.Player
 	state        state
@@ -60,32 +53,21 @@ type Model struct {
 	isPlaying    bool
 	eqValues     []int
 	err          error
+	scrollOffset int
 }
 
 func NewModel() Model {
-	// Custom delegate to ensure Onyx background everywhere
-	d := list.NewDefaultDelegate()
-	d.Styles.NormalTitle = textStyle
-	d.Styles.SelectedTitle = selectedItemStyle
-	d.Styles.NormalDesc = dimStyle
-	d.Styles.SelectedDesc = lipgloss.NewStyle().Foreground(onyx).Background(rusty)
-
-	l := list.New([]list.Item{}, d, 0, 0)
-	l.Title = " PIP-BOY 3000 RADIO "
-	l.Styles.Title = headerStyle
-	l.Styles.HelpStyle = dimStyle.PaddingLeft(2)
-	l.SetShowStatusBar(false)
-	
 	ti := textinput.New()
-	ti.Placeholder = "Enter station name or tag..."
+	ti.Placeholder = "TYPE TO SEARCH..."
+	ti.Prompt = " > "
 	ti.TextStyle = textStyle
 	
 	return Model{
-		list:   l,
-		input:  ti,
-		player: audio.NewPlayer(),
+		stations: []model.Station{},
+		input:    ti,
+		player:   audio.NewPlayer(),
 		eqValues: make([]int, 20),
-		state: stateBrowsing,
+		state:    stateBrowsing,
 	}
 }
 
@@ -124,8 +106,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		// Account for padding and border
-		m.list.SetSize(msg.Width/2-10, msg.Height-10)
 
 	case tea.KeyMsg:
 		if m.state == stateSearching {
@@ -152,20 +132,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "p":
 			m.isPlaying = false
 			m.player.Stop()
+		case "up", "k":
+			if m.cursor > 0 { m.cursor-- }
+			if m.cursor < m.scrollOffset { m.scrollOffset-- }
+		case "down", "j":
+			if m.cursor < len(m.stations)-1 { m.cursor++ }
+			maxVisible := m.height - 10
+			if m.cursor >= m.scrollOffset+maxVisible { m.scrollOffset++ }
 		case "enter":
-			if i, ok := m.list.SelectedItem().(item); ok {
-				m.current = i.station
+			if len(m.stations) > 0 {
+				m.current = m.stations[m.cursor]
 				m.isPlaying = true
 				m.player.Play(m.current.URL)
 			}
 		}
 
 	case stationsMsg:
-		items := make([]list.Item, len(msg))
-		for i, s := range msg {
-			items[i] = item{station: s}
-		}
-		m.list.SetItems(items)
+		m.stations = msg
+		m.cursor = 0
+		m.scrollOffset = 0
 
 	case error:
 		m.err = msg
@@ -179,10 +164,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tick()
 	}
 
-	if m.state == stateBrowsing {
-		m.list, cmd = m.list.Update(msg)
+	return m, nil
+}
+
+func (m Model) renderList() string {
+	if len(m.stations) == 0 {
+		return dimStyle.Render("SCANNING FREQUENCIES...")
 	}
-	return m, cmd
+
+	var sb strings.Builder
+	maxVisible := m.height - 10
+	if maxVisible < 1 { maxVisible = 1 }
+	
+	end := m.scrollOffset + maxVisible
+	if end > len(m.stations) { end = len(m.stations) }
+
+	for i := m.scrollOffset; i < end; i++ {
+		s := m.stations[i]
+		name := s.Name
+		if len(name) > 30 { name = name[:27] + "..." }
+		
+		line := fmt.Sprintf("%-30s", name)
+		if i == m.cursor {
+			sb.WriteString(selectedItemStyle.Render("> "+line) + "\n")
+		} else {
+			sb.WriteString(textStyle.Render("  "+line) + "\n")
+		}
+	}
+	return sb.String()
 }
 
 func (m Model) View() string {
@@ -192,7 +201,7 @@ func (m Model) View() string {
 	if m.state == stateSearching {
 		mainContent = headerStyle.Render(" SEARCH FREQUENCY ") + "\n\n" + m.input.View() + "\n\n" + dimStyle.Render("ENTER to search, ESC to cancel")
 	} else {
-		listSide := m.list.View()
+		listSide := m.renderList()
 		
 		playerSide := "\n" + headerStyle.Render(" SIGNAL DATA ") + "\n"
 		if m.err != nil {
@@ -214,15 +223,14 @@ func (m Model) View() string {
 			playerSide += dimStyle.Render("RECEIVER IDLE\nNO SIGNAL DETECTED") + "\n"
 		}
 		
-		playerSide += "\n\n" + dimStyle.Render("ENTER: TUNE IN\nS: SEARCH\nP: POWER OFF\nQ: QUIT")
+		playerSide += "\n\n" + dimStyle.Render("J/K: NAVIGATE\nENTER: TUNE IN\nS: SEARCH\nP: POWER OFF\nQ: QUIT")
 
 		mainContent = lipgloss.JoinHorizontal(lipgloss.Top, 
-			lipgloss.NewStyle().Width(m.width/2-4).Render(listSide),
-			lipgloss.NewStyle().Width(m.width/2-4).PaddingLeft(4).Render(playerSide),
+			lipgloss.NewStyle().Width(m.width/2-4).Background(onyx).Render(listSide),
+			lipgloss.NewStyle().Width(m.width/2-4).PaddingLeft(4).Background(onyx).Render(playerSide),
 		)
 	}
 
-	// Apply global Pip-Boy screen style
 	return screenStyle.Width(m.width - 4).Height(m.height - 2).Render(mainContent)
 }
 
