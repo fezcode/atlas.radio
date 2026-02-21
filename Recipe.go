@@ -31,7 +31,7 @@ func Run(bake *gobake.Engine) error {
 		}
 
 		ctx.Env = []string{
-			"CGO_ENABLED=1", // Some audio drivers need CGO
+			"CGO_ENABLED=0", // Pure Go audio
 			"GOOS=" + osName,
 			"GOARCH=" + archName,
 		}
