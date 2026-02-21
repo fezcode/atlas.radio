@@ -40,6 +40,7 @@ func Run(bake *gobake.Engine) error {
 			}
 
 			ctx.Env = []string{
+				"CGO_ENABLED=0",
 				"GOOS=" + t.os,
 				"GOARCH=" + t.arch,
 			}
