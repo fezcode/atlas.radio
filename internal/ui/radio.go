@@ -34,6 +34,7 @@ var (
 
 	textStyle = lipgloss.NewStyle().Foreground(amber).Background(onyx)
 	dimStyle  = lipgloss.NewStyle().Foreground(rusty).Background(onyx)
+	selectedItemStyle = lipgloss.NewStyle().Foreground(onyx).Background(amber)
 )
 
 type item struct {
@@ -45,8 +46,7 @@ func (i item) FilterValue() string { return i.station.Name }
 
 type state int
 const (
-	statePresets state = iota
-	stateBrowsing
+	stateBrowsing state = iota
 	stateSearching
 )
 
@@ -59,21 +59,21 @@ type Model struct {
 	current      model.Station
 	isPlaying    bool
 	eqValues     []int
+	err          error
 }
 
 func NewModel() Model {
+	// Custom delegate to ensure Onyx background everywhere
 	d := list.NewDefaultDelegate()
 	d.Styles.NormalTitle = textStyle
-	d.Styles.SelectedTitle = lipgloss.NewStyle().Foreground(onyx).Background(amber)
+	d.Styles.SelectedTitle = selectedItemStyle
 	d.Styles.NormalDesc = dimStyle
 	d.Styles.SelectedDesc = lipgloss.NewStyle().Foreground(onyx).Background(rusty)
 
 	l := list.New([]list.Item{}, d, 0, 0)
 	l.Title = " PIP-BOY 3000 RADIO "
 	l.Styles.Title = headerStyle
-	
-	// Fix transparent background on help
-	l.Styles.HelpStyle = dimStyle.Copy().PaddingLeft(2)
+	l.Styles.HelpStyle = dimStyle.PaddingLeft(2)
 	l.SetShowStatusBar(false)
 	
 	ti := textinput.New()
@@ -85,7 +85,7 @@ func NewModel() Model {
 		input:  ti,
 		player: audio.NewPlayer(),
 		eqValues: make([]int, 20),
-		state: statePresets,
+		state: stateBrowsing,
 	}
 }
 
@@ -95,31 +95,19 @@ func (m Model) Stop() {
 	}
 }
 
-func getPresets() []model.Station {
-	return []model.Station{
-		{Name: "Radio New Vegas", URL: "http://stream.radioreclame.nl:80/radioreclame", Country: "Mojave", Tags: "Classic, Fallout"},
-		{Name: "Mojave Music Radio", URL: "http://icecast.omroep.nl/radio6-bb-mp3", Country: "Mojave", Tags: "Country, Western"},
-		{Name: "Lofi Girl (Global)", URL: "http://stream.zeno.fm/0r0xa792kwzuv", Country: "France", Tags: "Lofi, Study"},
-		{Name: "Classic Jazz (NY)", URL: "http://stream.wbgo.org:80/wbgo", Country: "US", Tags: "Jazz, Smooth"},
-	}
-}
-
 type stationsMsg []model.Station
 type tickMsg time.Time
 
 func (m Model) Init() tea.Cmd {
-	presets := getPresets()
-	items := make([]list.Item, len(presets))
-	for i, s := range presets {
-		items[i] = item{station: s}
-	}
-	m.list.SetItems(items)
-	return tick()
+	return tea.Batch(m.searchCmd(""), tick())
 }
 
 func (m Model) searchCmd(q string) tea.Cmd {
 	return func() tea.Msg {
-		stations, _ := api.SearchStations(q)
+		stations, err := api.SearchStations(q)
+		if err != nil {
+			return err
+		}
 		return stationsMsg(stations)
 	}
 }
@@ -136,7 +124,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.list.SetSize(msg.Width/2-4, msg.Height-10)
+		// Account for padding and border
+		m.list.SetSize(msg.Width/2-10, msg.Height-10)
 
 	case tea.KeyMsg:
 		if m.state == stateSearching {
@@ -145,7 +134,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = stateBrowsing
 				return m, m.searchCmd(m.input.Value())
 			case "esc":
-				m.state = statePresets
+				m.state = stateBrowsing
 				return m, nil
 			}
 			m.input, cmd = m.input.Update(msg)
@@ -178,6 +167,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list.SetItems(items)
 
+	case error:
+		m.err = msg
+
 	case tickMsg:
 		if m.isPlaying {
 			for i := range m.eqValues {
@@ -187,21 +179,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tick()
 	}
 
-	m.list, cmd = m.list.Update(msg)
+	if m.state == stateBrowsing {
+		m.list, cmd = m.list.Update(msg)
+	}
 	return m, cmd
 }
 
 func (m Model) View() string {
 	if m.width == 0 { return "Initializing..." }
 
-	var s string
+	var mainContent string
 	if m.state == stateSearching {
-		s = headerStyle.Render(" SEARCH FREQUENCY ") + "\n\n" + m.input.View()
+		mainContent = headerStyle.Render(" SEARCH FREQUENCY ") + "\n\n" + m.input.View() + "\n\n" + dimStyle.Render("ENTER to search, ESC to cancel")
 	} else {
 		listSide := m.list.View()
 		
 		playerSide := "\n" + headerStyle.Render(" SIGNAL DATA ") + "\n"
-		if m.isPlaying {
+		if m.err != nil {
+			playerSide += restlessStyle().Render("ERROR: OFFLINE") + "\n"
+		} else if m.isPlaying {
 			playerSide += textStyle.Render("STATION: " + m.current.Name) + "\n"
 			playerSide += dimStyle.Render("SIGNAL: " + m.current.Country) + "\n\n"
 			
@@ -220,11 +216,16 @@ func (m Model) View() string {
 		
 		playerSide += "\n\n" + dimStyle.Render("ENTER: TUNE IN\nS: SEARCH\nP: POWER OFF\nQ: QUIT")
 
-		s = lipgloss.JoinHorizontal(lipgloss.Top, 
-			lipgloss.NewStyle().Width(m.width/2).Background(onyx).Render(listSide),
-			lipgloss.NewStyle().Width(m.width/2-4).PaddingLeft(4).Background(onyx).Render(playerSide),
+		mainContent = lipgloss.JoinHorizontal(lipgloss.Top, 
+			lipgloss.NewStyle().Width(m.width/2-4).Render(listSide),
+			lipgloss.NewStyle().Width(m.width/2-4).PaddingLeft(4).Render(playerSide),
 		)
 	}
 
-	return screenStyle.Width(m.width - 4).Height(m.height - 2).Render(s)
+	// Apply global Pip-Boy screen style
+	return screenStyle.Width(m.width - 4).Height(m.height - 2).Render(mainContent)
+}
+
+func restlessStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Bold(true).Background(onyx)
 }
