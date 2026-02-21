@@ -2,14 +2,17 @@ package audio
 
 import (
 	"context"
-	"fmt"
-	"os/exec"
-	"runtime"
+	"net/http"
+	"sync"
+
+	"github.com/ebitengine/oto/v3"
+	"github.com/hajimehoshi/go-mp3"
 )
 
 type Player struct {
+	otoCtx *oto.Context
 	cancel context.CancelFunc
-	cmd    *exec.Cmd
+	mu     sync.Mutex
 }
 
 func NewPlayer() *Player {
@@ -17,41 +20,66 @@ func NewPlayer() *Player {
 }
 
 func (p *Player) Play(streamURL string) error {
-	p.Stop()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	// Check if ffplay exists
-	_, err := exec.LookPath("ffplay")
-	if err != nil {
-		return fmt.Errorf("ffplay not found in PATH. Please install FFmpeg.")
+	// Stop previous
+	if p.cancel != nil {
+		p.cancel()
 	}
+
+	// 1. Fetch Stream
+	resp, err := http.Get(streamURL)
+	if err != nil {
+		return err
+	}
+
+	// 2. Decode MP3
+	decoder, err := mp3.NewDecoder(resp.Body)
+	if err != nil {
+		resp.Body.Close()
+		return err
+	}
+
+	// 3. Init Oto if not initialized
+	if p.otoCtx == nil {
+		op := &oto.NewContextOptions{
+			SampleRate:   decoder.SampleRate(),
+			ChannelCount: 2,
+			Format:       oto.FormatSignedInt16LE,
+		}
+		ctx, ready, err := oto.NewContext(op)
+		if err != nil {
+			resp.Body.Close()
+			return err
+		}
+		<-ready
+		p.otoCtx = ctx
+	}
+
+	// 4. Create Player
+	player := p.otoCtx.NewPlayer(decoder)
+	player.Play()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
 
-	// -nodisp: no video window
-	// -autoexit: exit when stream ends
-	p.cmd = exec.CommandContext(ctx, "ffplay", "-nodisp", "-autoexit", streamURL)
-	
-	err = p.cmd.Start()
-	if err != nil {
-		cancel()
-		return err
-	}
+	// 5. Monitor and Cleanup
+	go func() {
+		defer resp.Body.Close()
+		defer player.Close()
+
+		<-ctx.Done() // Block until stopped
+	}()
 
 	return nil
 }
 
 func (p *Player) Stop() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.cancel != nil {
 		p.cancel()
-	}
-	if p.cmd != nil && p.cmd.Process != nil {
-		if runtime.GOOS == "windows" {
-			_ = exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", p.cmd.Process.Pid)).Run()
-		} else {
-			_ = p.cmd.Process.Kill()
-		}
-		_ = p.cmd.Wait()
-		p.cmd = nil
+		p.cancel = nil
 	}
 }

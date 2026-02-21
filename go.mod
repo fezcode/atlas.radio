@@ -6,7 +6,9 @@ require (
 	github.com/charmbracelet/bubbles v0.21.1
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/ebitengine/oto/v3 v3.2.0
 	github.com/fezcode/gobake v0.3.0
+	github.com/hajimehoshi/go-mp3 v0.3.4
 )
 
 require (
@@ -19,6 +21,7 @@ require (
 	github.com/clipperhouse/displaywidth v0.9.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
+	github.com/ebitengine/purego v0.7.0 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/fezcode/go-piml v1.2.1 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
