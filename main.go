@@ -15,6 +15,14 @@ func main() {
 		fmt.Printf("atlas.radio v%s\n", Version)
 		return
 	}
+	if len(os.Args) > 1 && (os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "help") {
+		fmt.Println("Atlas Radio - Global terminal radio receiver with Pip-Boy TUI.")
+		fmt.Println("\nUsage:")
+		fmt.Println("  atlas.radio        Start the radio receiver")
+		fmt.Println("  atlas.radio -v     Show version")
+		fmt.Println("  atlas.radio -h     Show this help")
+		return
+	}
 
 	m := ui.NewModel()
 	// Ensure the radio stops when the main process exits
