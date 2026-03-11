@@ -2,9 +2,9 @@
 
 ![Banner Image](./banner-image.png)
 
-**atlas.radio** is a high-fidelity, world radio receiver for the Mojave wasteland. Tune into thousands of live stations across the globe directly from your terminal. Built with a pure Go audio engine, it requires zero external dependencies like FFmpeg or VLC.
+**atlas.radio** is a high-fidelity, world radio receiver for the Atlas Suite. Tune into thousands of live stations across the globe directly from your terminal. Built with a pure Go audio engine, it requires zero external dependencies like FFmpeg or VLC.
 
-Part of the **Atlas Suite**, it features a rugged Pip-Boy inspired interface with real-time frequency visualization.
+Part of the **Atlas Suite**, it features a rugged industrial TUI interface with real-time signal telemetry.
 
 ![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
@@ -13,8 +13,8 @@ Part of the **Atlas Suite**, it features a rugged Pip-Boy inspired interface wit
 
 - 📡 **Global Reach:** Access the open Radio Browser API to search for any station worldwide.
 - ⚙️ **Pure Go Audio:** Uses `oto/v3` and `go-mp3` for native, cross-platform audio playback.
-- 📟 **Pip-Boy 3000 TUI:** High-fidelity Amber CRT aesthetic with a solid Onyx background.
-- 📊 **Signal Visualizer:** Real-time frequency "equalizer" animation during playback.
+- 📟 **Atlas Industrial TUI:** High-fidelity Amber terminal aesthetic with a minimalist footprint.
+- 📊 **Signal Telemetry:** Real-time frequency data and station metadata display.
 - 🔍 **Frequency Search:** Instant fuzzy search for stations by name, tag, or country.
 - 📜 **Signal Catalog:** Smooth scrolling interface to browse through 50+ discovered signals.
 

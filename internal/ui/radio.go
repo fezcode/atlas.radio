@@ -15,60 +15,83 @@ import (
 )
 
 var (
-	amber  = lipgloss.Color("#FFB642")
-	onyx   = lipgloss.Color("#050505")
-	rusty  = lipgloss.Color("#5E4737")
+	// Pip-Boy Amber
+	amber = lipgloss.Color("#FFB642")
+	dim   = lipgloss.Color("#5E4737")
 
-	screenStyle = lipgloss.NewStyle().
-			Padding(1, 2).
-			Border(lipgloss.RoundedBorder()).
+	// Styles
+	mainStyle = lipgloss.NewStyle().
+			Foreground(amber)
+
+	titleStyle = lipgloss.NewStyle().
+			Foreground(amber).
+			Border(lipgloss.NormalBorder(), false, false, true, false).
 			BorderForeground(amber).
-			Background(onyx)
-
-	headerStyle = lipgloss.NewStyle().
-			Foreground(onyx).
-			Background(amber).
 			Padding(0, 1).
 			Bold(true)
 
-	textStyle = lipgloss.NewStyle().Foreground(amber).Background(onyx)
-	dimStyle  = lipgloss.NewStyle().Foreground(rusty).Background(onyx)
-	selectedItemStyle = lipgloss.NewStyle().Foreground(onyx).Background(amber)
+	borderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(amber).
+			Padding(0, 1)
+
+	buttonStyle = lipgloss.NewStyle().
+			Foreground(amber).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(amber).
+			Padding(0, 1).
+			MarginRight(1)
+
+	activeButtonStyle = lipgloss.NewStyle().
+			Foreground(amber).
+			Border(lipgloss.ThickBorder()).
+			BorderForeground(amber).
+			Padding(0, 1).
+			MarginRight(1).
+			Bold(true)
+
+	selectedItemStyle = lipgloss.NewStyle().
+				Foreground(amber).
+				Bold(true)
+
+	dimTextStyle = lipgloss.NewStyle().
+			Foreground(dim)
 )
 
 type state int
+
 const (
 	stateBrowsing state = iota
 	stateSearching
 )
 
 type Model struct {
-	stations     []model.Station
-	cursor       int
-	input        textinput.Model
-	player       *audio.Player
-	state        state
+	stations      []model.Station
+	cursor        int
+	input         textinput.Model
+	player        *audio.Player
+	state         state
 	width, height int
-	current      model.Station
-	isPlaying    bool
-	isLoading    bool
-	eqValues     []int
-	err          error
-	scrollOffset int
+	current       model.Station
+	isPlaying     bool
+	isLoading     bool
+	eqValues      []int
+	err           error
+	scrollOffset  int
 }
 
 func NewModel() Model {
 	ti := textinput.New()
-	ti.Placeholder = "ENTER SIGNAL QUERY..."
+	ti.Placeholder = "FREQUENCY SCAN..."
 	ti.Prompt = " > "
-	ti.TextStyle = textStyle
-	
+	ti.TextStyle = mainStyle
+
 	return Model{
-		stations: []model.Station{},
-		input:    ti,
-		player:   audio.NewPlayer(),
-		eqValues: make([]int, 20),
-		state:    stateBrowsing,
+		stations:  []model.Station{},
+		input:     ti,
+		player:    audio.NewPlayer(),
+		eqValues:  make([]int, 30),
+		state:     stateBrowsing,
 		isLoading: true,
 	}
 }
@@ -132,16 +155,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = stateSearching
 			m.input.Focus()
 			return m, nil
-		case "p":
-			m.isPlaying = false
-			m.player.Stop()
+		case "p", " ":
+			if m.isPlaying {
+				m.isPlaying = false
+				m.player.Stop()
+			} else if len(m.stations) > 0 {
+				m.current = m.stations[m.cursor]
+				m.isPlaying = true
+				m.err = m.player.Play(m.current.URL)
+			}
 		case "up", "k":
-			if m.cursor > 0 { m.cursor-- }
-			if m.cursor < m.scrollOffset { m.scrollOffset-- }
+			if m.cursor > 0 {
+				m.cursor--
+			}
+			if m.cursor < m.scrollOffset {
+				m.scrollOffset = m.cursor
+			}
 		case "down", "j":
-			if m.cursor < len(m.stations)-1 { m.cursor++ }
-			maxVisible := m.height - 12
-			if m.cursor >= m.scrollOffset+maxVisible { m.scrollOffset++ }
+			if m.cursor < len(m.stations)-1 {
+				m.cursor++
+			}
+			maxVisible := m.height - 18
+			if maxVisible < 1 {
+				maxVisible = 1
+			}
+			if m.cursor >= m.scrollOffset+maxVisible {
+				m.scrollOffset++
+			}
 		case "enter":
 			if len(m.stations) > 0 {
 				m.current = m.stations[m.cursor]
@@ -164,7 +204,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		if m.isPlaying {
 			for i := range m.eqValues {
-				m.eqValues[i] = rand.Intn(5)
+				m.eqValues[i] = rand.Intn(8)
 			}
 		}
 		return m, tick()
@@ -173,82 +213,111 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) renderList() string {
-	if m.isLoading {
-		return dimStyle.Render("SCANNING FREQUENCIES...")
+func (m Model) renderHeader() string {
+	return titleStyle.
+		Width(m.width - 10).
+		Align(lipgloss.Center).
+		Render("ATLAS RADIO RECEIVER - MODEL 3000")
+}
+
+func (m Model) renderDisplay() string {
+	width := m.width - 6
+	if width < 40 {
+		width = 40
 	}
-	if len(m.stations) == 0 {
-		return restlessStyle().Render("NO SIGNAL FOUND.")
+
+	var content string
+	if m.isLoading {
+		content = "SCANNING GLOBAL FREQUENCIES...\nPLEASE STAND BY."
+	} else if m.err != nil {
+		content = fmt.Sprintf("SIGNAL INTERFERENCE DETECTED\nERROR: %s", strings.ToUpper(m.err.Error()))
+	} else if m.isPlaying {
+		name := strings.ToUpper(m.current.Name)
+		if len(name) > width-15 {
+			name = name[:width-18] + "..."
+		}
+		content = fmt.Sprintf("NOW TUNED: %s\nORIGIN   : %s", name, strings.ToUpper(m.current.Country))
+	} else {
+		content = "RECEIVER IDLE\nNO SIGNAL DETECTED"
+	}
+
+	return borderStyle.Width(width).Render(content)
+}
+
+func (m Model) renderControls() string {
+	play := buttonStyle.Render("PLAY [P]")
+	if m.isPlaying {
+		play = activeButtonStyle.Render("PLAYING")
+	}
+
+	stop := buttonStyle.Render("STOP [P]")
+	if !m.isPlaying {
+		stop = activeButtonStyle.Render("IDLE")
+	}
+
+	scan := buttonStyle.Render("SCAN [S]")
+	exit := buttonStyle.Render("OFF [Q]")
+
+	return lipgloss.JoinHorizontal(lipgloss.Center, play, stop, scan, exit)
+}
+
+func (m Model) renderList() string {
+	maxVisible := m.height - 18
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+
+	end := m.scrollOffset + maxVisible
+	if end > len(m.stations) {
+		end = len(m.stations)
 	}
 
 	var sb strings.Builder
-	maxVisible := m.height - 12
-	if maxVisible < 1 { maxVisible = 1 }
-	
-	end := m.scrollOffset + maxVisible
-	if end > len(m.stations) { end = len(m.stations) }
-
 	for i := m.scrollOffset; i < end; i++ {
 		s := m.stations[i]
 		name := s.Name
-		if len(name) > 30 { name = name[:27] + "..." }
-		
-		line := fmt.Sprintf("%-30s", name)
+		if len(name) > 50 {
+			name = name[:47] + "..."
+		}
+
 		if i == m.cursor {
-			sb.WriteString(selectedItemStyle.Render("> "+line) + "\n")
+			sb.WriteString(selectedItemStyle.Render(fmt.Sprintf(" > %-50s ", name)) + "\n")
 		} else {
-			sb.WriteString(textStyle.Render("  "+line) + "\n")
+			sb.WriteString(mainStyle.Render(fmt.Sprintf("   %-50s ", name)) + "\n")
 		}
 	}
-	
-	// Add scrolling indicator
-	if len(m.stations) > maxVisible {
-		sb.WriteString(dimStyle.Render(fmt.Sprintf("\n  SIGNAL %d/%d", m.cursor+1, len(m.stations))))
-	}
-
 	return sb.String()
 }
 
 func (m Model) View() string {
-	if m.width == 0 { return "Initializing..." }
+	if m.width == 0 {
+		return "Initializing..."
+	}
 
 	var mainContent string
 	if m.state == stateSearching {
-		mainContent = headerStyle.Render(" SEARCH FREQUENCY ") + "\n\n" + m.input.View() + "\n\n" + dimStyle.Render("ENTER to search, ESC to cancel")
+		mainContent = lipgloss.JoinVertical(lipgloss.Center,
+			activeButtonStyle.Render(" SEARCH FREQUENCY "),
+			"\n",
+			m.input.View(),
+			"\n",
+			dimTextStyle.Render("ENTER TO SCAN / ESC TO ABORT"),
+		)
 	} else {
-		listSide := m.renderList()
-		
-		playerSide := "\n" + headerStyle.Render(" SIGNAL DATA ") + "\n"
-		if m.err != nil {
-			playerSide += restlessStyle().Render("ERROR: " + m.err.Error()) + "\n"
-		} else if m.isPlaying {
-			playerSide += textStyle.Render("STATION: " + m.current.Name) + "\n"
-			playerSide += dimStyle.Render("SIGNAL: " + m.current.Country) + "\n\n"
-			
-			playerSide += textStyle.Render("FREQ VISUALIZER:") + "\n"
-			var hEq strings.Builder
-			for h := 4; h >= 0; h-- {
-				for _, v := range m.eqValues {
-					if v > h { hEq.WriteString("█") } else { hEq.WriteString(" ") }
-				}
-				hEq.WriteString("\n")
-			}
-			playerSide += textStyle.Render(hEq.String())
-		} else {
-			playerSide += dimStyle.Render("RECEIVER IDLE\nNO SIGNAL DETECTED") + "\n"
-		}
-		
-		playerSide += "\n\n" + dimStyle.Render("J/K: NAVIGATE\nENTER: TUNE IN\nS: SEARCH\nP: POWER OFF\nQ: QUIT")
-
-		mainContent = lipgloss.JoinHorizontal(lipgloss.Top, 
-			lipgloss.NewStyle().Width(m.width/2-4).Render(listSide),
-			lipgloss.NewStyle().Width(m.width/2-4).PaddingLeft(4).Render(playerSide),
+		mainContent = lipgloss.JoinVertical(lipgloss.Center,
+			m.renderHeader(),
+			"\n",
+			m.renderDisplay(),
+			"\n",
+			m.renderControls(),
+			"\n",
+			m.renderList(),
 		)
 	}
 
-	return screenStyle.Width(m.width - 4).Height(m.height - 2).Render(mainContent)
-}
-
-func restlessStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Bold(true).Background(onyx)
+	return mainStyle.
+		Width(m.width).
+		Height(m.height).
+		Align(lipgloss.Center, lipgloss.Center).
+		Render(mainContent)
 }

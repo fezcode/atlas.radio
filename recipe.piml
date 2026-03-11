@@ -1,4 +1,4 @@
 (name) atlas.radio
-(version) 0.2.2
-(description) Global terminal radio receiver with Pip-Boy TUI.
+(version) 0.3.1
+(description) Global terminal radio receiver for Atlas Suite.
 (license) MIT
