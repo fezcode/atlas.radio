@@ -47,7 +47,7 @@ func Run(bake *gobake.Engine) error {
 			}
 
 			// Skip CGO cross-compilation if host doesn't match
-			if cgo == "1" && (runtime.GOOS != t.os) {
+			if cgo == "1" && (runtime.GOOS != t.os || runtime.GOARCH != t.arch) {
 				ctx.Log("Skipping %s/%s build (CGO required for audio)", t.os, t.arch)
 				continue
 			}
