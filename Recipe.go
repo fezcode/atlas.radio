@@ -1,9 +1,9 @@
 //go:build gobake
+
 package bake_recipe
 
 import (
 	"fmt"
-	"runtime"
 	"github.com/fezcode/gobake"
 )
 
@@ -40,24 +40,20 @@ func Run(bake *gobake.Engine) error {
 				output += ".exe"
 			}
 
-			// Audio backends (oto) require CGO on non-windows platforms.
-			cgo := "0"
-			if t.os != "windows" {
-				cgo = "1"
-			}
-
-			// Skip CGO cross-compilation if host doesn't match
-			if cgo == "1" && (runtime.GOOS != t.os || runtime.GOARCH != t.arch) {
-				ctx.Log("Skipping %s/%s build (CGO required for audio)", t.os, t.arch)
+			// oto reaches the audio device differently per platform: on macOS it
+			// goes through purego, so CGO can stay off and the binary still works,
+			// but on Linux it needs ALSA headers and therefore cgo.
+			if t.os == "linux" {
+				ctx.Log("Skipping %s/%s: ALSA needs cgo (build on Linux)", t.os, t.arch)
 				continue
 			}
 
 			ctx.Env = []string{
-				"CGO_ENABLED=" + cgo,
+				"CGO_ENABLED=0",
 				"GOOS=" + t.os,
 				"GOARCH=" + t.arch,
 			}
-			
+
 			err := ctx.Run("go", "build", "-ldflags", ldflags, "-o", output, ".")
 			if err != nil {
 				return err
